@@ -198,7 +198,7 @@ int main (int argc, char* argv[]){
     cout << "Processes Left in Ready Queue: " << ready_queue.size() << endl;
     cout << "Processes Left in Input Queue: " << input_queue.size() << endl;
     cout << "Processes Left in Output Queue: " << output_queue.size() << endl;
-    cout << "=============================================" << endl;
+    cout << "===============================================" << endl;
 
     return 0; // Return 0 to indicate successful execution
 }
@@ -431,7 +431,7 @@ void print_state(int t) {
     cout << "OActive: " << (output_active ? to_string(output_active->process_id) : "None") << endl;
 
     // Print the queues
-    cout << "Entry Q: ";
+    cout << "Entry Queue: ";
     if (entry_queue.empty()) cout << "Empty";
     for (size_t i = 0; i < entry_queue.size(); i++) {
         cout << entry_queue[i]->process_id << " ";
@@ -439,7 +439,7 @@ void print_state(int t) {
     cout << endl;
     
     // Ready Queue
-    cout << "Ready Q: ";
+    cout << "Ready Queue: ";
     if (ready_queue.empty()) {
         cout << "[Empty]";
     } 
@@ -449,7 +449,7 @@ void print_state(int t) {
     cout << endl;
 
     // Input Queue
-    cout << "Input Q: ";
+    cout << "Input Queue: ";
     if (input_queue.empty()) {
         cout << "[Empty]";
     }
@@ -459,7 +459,7 @@ void print_state(int t) {
     cout << endl;
 
     // Output Queue
-    cout << "Output Q: ";
+    cout << "Output Queue: ";
     if (output_queue.empty()) cout << "[Empty]";
     for (size_t i = 0; i < output_queue.size(); i++) {
         cout << output_queue[i]->process_id << " ";
