@@ -1,4 +1,3 @@
-````md
 # CPU Scheduler Simulation
 
 A C++ operating system scheduling simulator that models how processes move through CPU, input, and output queues. The simulator supports both First Come First Serve (FCFS) and Round Robin (RR) scheduling algorithms using a configurable time quantum.
@@ -229,6 +228,3 @@ I also gained more experience designing larger multi-function C++ programs and o
 * Add process priority support
 * Improve process state tracking
 * Add multi-core CPU simulation
-
-```
-```
