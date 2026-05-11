@@ -1,73 +1,85 @@
-/*******************************************************************
-* CSCI 480 - Assignment 4
-* CPU Scheduling Simulation
-* Cyrus Johnson | Z2006481
+/***********************************************************************
+* CPU Scheduling Simulator
+* Author: Cyrus Johnson
 *
-* this program simulates how an OS handles cpu scheduling.
-* it uses a FCFS algorythm and also supports Round Robin 
-* for the extra credit part.
+* Simulates operating system CPU scheduling using:
+*   - First Come First Serve (FCFS)
+*   - Round Robin Scheduling
 *
-* Extra Credit Included   
-*******************************************************************/
-// libraries
+* Features:
+*   - CPU, Input, and Output device simulation
+*   - Multiple process queues
+*   - Process statistics tracking
+*   - Configurable Round Robin quantum
+*
+* Technologies:
+*   - C++
+*   - STL deque/vector
+*
+************************************************************************/
+
 #include <iostream>
 #include <vector>
 #include <deque> 
 #include <string>
 #include <fstream>
+#include <iomanip>
 
 using namespace std;
 
 /* Constants */
-#define MAX_TIME 500
-#define IN_USE 5
-#define HOW_OFTEN 25
+const int MAX_TIME = 500;       // The maximum time for the simulation
+const int IN_USE = 5;           // The number of processes that can be in use at once
+const int HOW_OFTEN = 25;       // How often to print the system state
+const int DEFAULT_QUANTUM = 5;   // The default time quantum for Round Robin
 
-/***************************************************
-* Process 
-* Process structure to hold process information
-***************************************************/
+/* Process Structure */
 struct Process {
-    string process_name;
-    int process_id;
-    int arrival_time;
+    string process_name;                // The name of the process
+    int process_id;                     // The ID of the process
+    int arrival_time;                   // The time the process arrives
 
-    vector<pair<string, int>> history; 
+    vector<pair<char, int>> history;    // Vector to store the process's history
 
-    int sub; // index for history vector
+    int history_index = 0;              // Index into the history vector
 
-    int cpu_timer;
-    int input_timer;
-    int output_timer;
+    int cpu_timer = 0;                  // Timer for CPU usage
+    int input_timer = 0;                // Timer for input usage
+    int output_timer = 0;               // Timer for output usage
 
-    int total_cpu_time;
-    int total_input_time;
-    int total_output_time;
+    int total_cpu_time = 0;             // Total time spent on CPU
+    int total_input_time = 0;           // Total time spent on input
+    int total_output_time = 0;          // Total time spent on output
 
-    int cpu_count;
-    int input_count;
-    int output_count;
+    int cpu_count = 0;                  // Number of times the process has used the CPU
+    int input_count = 0;                // Number of times the process has used input
+    int output_count = 0;               // Number of times the process has used output
 
-    int waiting_time;
+    int waiting_time = 0;               // Total time spent waiting
 };
 
-/* Global Queues */
-deque<Process*> entry_queue;
-deque<Process*> ready_queue;
-deque<Process*> input_queue;
-deque<Process*> output_queue;
+/* Queues */
+deque<Process*> entry_queue;        // Queue for new processes
+deque<Process*> ready_queue;        // Queue for ready processes
+deque<Process*> input_queue;        // Queue for processes waiting for input
+deque<Process*> output_queue;       // Queue for processes waiting for output
 
-/* Global Pointers */
-Process* active = nullptr;
-Process* i_active = nullptr;
-Process* o_active = nullptr;
+/* Active Processes */
+Process* active = nullptr;          // Pointer to the currently running process
+Process* input_active = nullptr;    // Pointer to the currently waiting for input process
+Process* output_active = nullptr;   // Pointer to the currently waiting for output process
 
-// system globals
-int sys_timer = 0; 
-int quantum = 5; 
-int q_count = 0;
-int idle_ticks = 0;
-int total_done = 0;
+/* Simulation Statistics */
+int sys_timer = 0;                  // The system timer
+int quantum = DEFAULT_QUANTUM;      // The time quantum for Round Robin
+int quantum_counter = 0;            // The current time within the quantum
+int idle_ticks = 0;                 // The number of idle ticks
+int total_done = 0;                 // The total number of processes that have completed
+
+int total_waiting_time = 0;         // The total time all processes have spent waiting
+int total_cpu_time = 0;             // The total time all processes have spent on the CPU
+int total_input_time = 0;           // The total time all processes have spent on input
+int total_output_time = 0;          // The total time all processes have spent on output
 
 /* Function Prototypes */
 void read_input_file(string filename);
@@ -83,98 +95,123 @@ void terminate_process(Process* p);
 
 /*********************************************************************************
 * read_input_file
-* Function to read the input file and populate the entry queue with processes
-* * @param filename - The name of the input file to read
+*   Function to read the input file and populate the entry queue with processes
+*
+* @param filename - The name of the input file to read
 *********************************************************************************/
 void read_input_file(string filename) {
-    // open the file
+    // Open the file
     ifstream infile(filename);
     if (!infile.is_open()) {
-        cout << "couldnt open the file!" << endl;
+        cout << "Failed to open " << filename << " file!" << endl;
         exit(1);
     }
 
-    // read the file and create processes
-    string name;
-    int arrival;
-    int next_pid = 101;
+    // Read the file and create processes
+    string name;            // The name of the process
+    int arrival;            // The arrival time of the process
+    int next_pid = 101;     // The next available process ID
 
-    // read until we hit STOPHERE
+    // Read until we hit STOPHERE
     while (infile >> name && name != "STOPHERE") {
         if (!(infile >> arrival)) break; 
 
-        // create a new process and fill in the details
+        // Create a new process and fill in the details
         Process* p = new Process();
         p->process_name = name;
         p->arrival_time = arrival;
         p->process_id = next_pid++;
-        p->sub = 0;
+        p->history_index = 0;
 
-        string type;
-        int val;
+        char type;  // The type of the operation
+        int val;    // The value of the operation
         
-        // read the history until we hit N
-        while (infile >> type && type != "N") {
+        // Read the history until we hit N
+        while (infile >> type && type != 'N') {
             infile >> val;
             p->history.push_back(make_pair(type, val));
         }
         
-        //
+        // Read the final value
         infile >> val; 
 
-        // add to entry queue if it has a history, otherwise clean up memory
+        // Add to entry queue if it has a history, otherwise clean up memory
         if (!p->history.empty()) {
             entry_queue.push_back(p);
         } else {
             delete p; 
         }
     }
-    // close the file
+    // Close the file
     infile.close();
 }
 
 /*********************************************************************************
 * main 
-* Loop represents the scheduler in the OS. Timer initialized to '0' and
-* increments until the timer reaches MAX_TIME or there are no more processes
-* left.
+*   The main function. Loop represents the scheduler in the OS. Timer initialized
+*   to '0' and increments until the timer reaches MAX_TIME or there are no more
+*   processes left.
 *
 * @param argc - The number of command line arguments
 * @param argv - The array of command line arguments
 *********************************************************************************/
 int main (int argc, char* argv[]){
-    // check for the file argument
+    // Check the command line arguments
     if (argc < 2) {
-        cout << "Usage: ./program <file> [quantum]" << endl;
+        cout << "Usage: ./cpu-scheduler-simulation <file> [quantum]" << endl;
         return 1;
     }
 
-    // rr extra credit
+    // Read the quantum if provided
     if (argc == 3) {
         quantum = stoi(argv[2]);
     }
 
-    // read the input file and populate the entry queue
+    // Read the input file and populate the entry queue
     read_input_file(argv[1]);
     run_simulation();
 
-    // print final stats
-    cout << "\n--- Final Stats ---" << endl;
+    // Print final stats
+    cout << "\n========== Final Simulation Summary ==========" << endl;
     cout << "Final Timer: " << sys_timer << endl;
-    cout << "Proccesses Termimated: " << total_done << endl;
-    cout << "Idle Ticks: " << idle_ticks << endl;
+    cout << "Processes Terminated: " << total_done << endl;
+    cout << "CPU Idle Time: " << idle_ticks << endl;
 
-    return 0;
+    // Calculate and print CPU utilization
+    if (sys_timer > 0) {
+        double cpu_utilization = ((double)(sys_timer - idle_ticks) / sys_timer) * 100.0;
+        cout << fixed << setprecision(2);
+        cout << "CPU Utilization: " << cpu_utilization << "%" << endl;
+    }
+
+    // Calculate and print average waiting time
+    if (total_done > 0) {
+        double average_waiting_time = (double)total_waiting_time / total_done;
+        cout << "Average Waiting Time: " << average_waiting_time << endl;
+    }
+
+    // Print the total CPU time, input time, and output time
+    cout << "Total CPU Time: " << total_cpu_time << endl;
+    cout << "Total Input Time: " << total_input_time << endl;
+    cout << "Total Output Time: " << total_output_time << endl;
+    cout << "Processes Left in Entry Queue: " << entry_queue.size() << endl;
+    cout << "Processes Left in Ready Queue: " << ready_queue.size() << endl;
+    cout << "Processes Left in Input Queue: " << input_queue.size() << endl;
+    cout << "Processes Left in Output Queue: " << output_queue.size() << endl;
+    cout << "=============================================" << endl;
+
+    return 0; // Return 0 to indicate successful execution
 }
 
 /*********************************************************************************
 * run_simulation
-* this is the main loop that runs the hole thing until max time or we
-* run out of proccesses to run.
+*   This is the main loop that runs the whole thing until max time or we
+*   run out of processes to run.
+*
 * @param none
 *********************************************************************************/
 void run_simulation() {
-    // loop until max time or we run out of proccesses to run
+    // Loop until max time or we run out of process to run
     while (sys_timer < MAX_TIME) {
         check_arrivals();
         handle_cpu();
@@ -183,17 +220,17 @@ void run_simulation() {
         dispatch_cpu();
         update_waiting_time();
 
-        // print the state every HOW_OFTEN time units
+        // Print the state every HOW_OFTEN time units
         if (sys_timer % HOW_OFTEN == 0) {
             print_state(sys_timer);
         }
 
-        // increment the timer
+        // Increment the timer
         sys_timer++;
 
-        // stop if nothing left to do
+        // Stop if nothing left to do
         if (entry_queue.empty() && ready_queue.empty() && input_queue.empty() && 
-            output_queue.empty() && !active && !i_active && !o_active) {
+            output_queue.empty() && !active && !input_active && !output_active) {
             break;
         }
     }
@@ -201,25 +238,27 @@ void run_simulation() {
 
 /*********************************************************************************
 * check_arrivals
-* checks if any new proccess arrived in the entry q and moves them to ready
-* if there is room in the sys.
+*   Checks if any new process arrived in the entry queue and moves them to the ready queue
+*   if there is room in the system.
+*
 * @param none
 *********************************************************************************/
 void check_arrivals() {
-    // check the entry queue for new arrivals and move them to ready if there is room in the system
+    // Check the entry queue for new arrivals and move them to ready if there is room in the system
     int cur_in_sys = (int)ready_queue.size() + (int)input_queue.size() + (int)output_queue.size();
-    // count the active processes in the system
+
+    // Count the active processes in the system
     if (active) {
         cur_in_sys++;
-    } 
-    if (i_active) {
+    }
+    if (input_active) {
         cur_in_sys++;
     }
-    if (o_active) {
+    if (output_active) {
         cur_in_sys++;
     }
 
-    // move processes from entry to ready if they have arrived and there is room in the system
+    // Move processes from entry to ready if they have arrived and there is room in the system
     while (!entry_queue.empty() && entry_queue.front()->arrival_time <= sys_timer && cur_in_sys < IN_USE) {
         Process* p = entry_queue.front();
         entry_queue.pop_front();
@@ -231,8 +270,9 @@ void check_arrivals() {
 
 /*********************************************************************************
 * dispatch_cpu
-* picks the next thing from the ready queue and puts it on the cpu 
-* to start runing.
+*   Picks the next thing from the ready queue and puts it on the cpu 
+*   to start running.
+*
 * @param none
 *********************************************************************************/ 
 void dispatch_cpu() {
@@ -242,7 +282,7 @@ void dispatch_cpu() {
         Process* next_p = ready_queue.front();
         
         // if the process has no more history, remove it from the ready queue and handle termination or skip
-        if (next_p->history.empty() || next_p->sub >= (int)next_p->history.size()) {
+        if (next_p->history.empty() || next_p->history_index >= (int)next_p->history.size()) {
             ready_queue.pop_front();
             // Handle termination or skip
             return;
@@ -251,112 +291,124 @@ void dispatch_cpu() {
         // dispatch the process to the CPU
         active = next_p;
         ready_queue.pop_front();
-        active->cpu_timer = active->history[active->sub].second;
-        q_count = 0;
+        active->cpu_timer = active->history[active->history_index].second;
+        quantum_counter = 0;
     }
 }
 
 /*********************************************************************************
 * handle_cpu
-* decrements the timer for the active proccess and checks if its done
-* or if it needs to switch out for round robin.
+*   Decrements the timer for the active process and checks if its done
+*   or if it needs to switch out for round robin.
+*
 * @param none
 *********************************************************************************/
 void handle_cpu() {
-    // if there is an active process, decrement its timer and check if it's done or if it needs to switch out for round robin
+    // If there is an active process, decrement its timer and check if it's done or if it needs to switch out for round robin
     if (active != nullptr) {
         active->cpu_timer--;
         active->total_cpu_time++;
-        q_count++;
+        quantum_counter++;
 
-        // if the process is done with its cpu burst, move it to the right queue or terminate it
+        // If the process is done with its cpu burst, move it to the right queue or terminate it
         if (active->cpu_timer == 0) {
             active->cpu_count++;
-            active->sub++;
+            active->history_index++;
 
-            // if there are no more bursts, terminate the process
-            if (active->sub >= (int)active->history.size()) {
+            // If there are no more bursts, terminate the process
+            if (active->history_index >= (int)active->history.size()) {
                 terminate_process(active);
                 total_done++;
                 active = nullptr;
 
-            } else { // otherwise move it to the right queue
-                if (active->history[active->sub].first == "I") input_queue.push_back(active);
-                else output_queue.push_back(active);
+            } else { // Otherwise move it to the right queue
+                char burst_type = active->history[active->history_index].first;
+
+                    // If the burst is an input burst, move the process to the input queue
+                    if (burst_type == 'I') {
+                        input_queue.push_back(active);
+                        } else if (burst_type == 'O') { // If the burst is an output burst, move the process to the output queue
+                                   output_queue.push_back(active);
+                        }
                 active = nullptr;
             }
 
-        } else if (q_count == quantum) { // if the process has used up its quantum, move it to the back of the ready queue
-            active->history[active->sub].second = active->cpu_timer;
+          // If the burst is a cpu burst, move the process to the ready queue
+        } else if (quantum_counter == quantum) { // if the process has used up its quantum, move it to the back of the ready queue
+            active->history[active->history_index].second = active->cpu_timer;
             ready_queue.push_back(active);
             active = nullptr;
         }
-    } else { // if there is no active process, increment idle time
+    } else { // If there is no active process, increment idle time
         idle_ticks++;
     }
 }
 
 /*********************************************************************************
 * handle_input
-* handles the input device and moves proccess back to ready when 
-* the burst is finished.
+*   Handles the input device and moves proccess back to ready when 
+*   the burst is finished.
+*
 * @param none
 *********************************************************************************/
 void handle_input() {
-    // if there is no active process on the input device and there is something in the input queue, move it to the input device
-    if (i_active == nullptr && !input_queue.empty()) {
-        i_active = input_queue.front();
+    // If there is no active process on the input device and there is something in the input queue, move it to the input device
+    if (input_active == nullptr && !input_queue.empty()) {
+        input_active = input_queue.front();
         input_queue.pop_front();
-        i_active->input_timer = i_active->history[i_active->sub].second;
+        input_active->input_timer = input_active->history[input_active->history_index].second;
     }
-    // if there is an active process on the input device, decrement its timer and check if it's done
-    if (i_active) { 
-        i_active->input_timer--;
-        i_active->total_input_time++;
-        if (i_active->input_timer == 0) {
-            i_active->input_count++;
-            i_active->sub++;
-            ready_queue.push_back(i_active);
-            i_active = nullptr;
+    // If there is an active process on the input device, decrement its timer and check if it's done
+    if (input_active) { 
+        input_active->input_timer--;
+        input_active->total_input_time++;
+        if (input_active->input_timer == 0) { // If the input timer is 0, the input burst is done
+            input_active->input_count++;
+            input_active->history_index++;
+            ready_queue.push_back(input_active);
+            input_active = nullptr;
         }
     }
 }
 
 /*********************************************************************************
 * handle_output
-* does the same as input but for the output device.
+*   Handles the output device and moves proccess back to ready when 
+*   the burst is finished.
+*
 * @param none
 *********************************************************************************/
 void handle_output() {
-    //
-    if (o_active == nullptr && !output_queue.empty()) {
-        o_active = output_queue.front();
+    // If there is no active process on the output device and there is something in the output queue, move it to the output device
+    if (output_active == nullptr && !output_queue.empty()) {
+        output_active = output_queue.front();
         output_queue.pop_front();
-        o_active->output_timer = o_active->history[o_active->sub].second;
+        output_active->output_timer = output_active->history[output_active->history_index].second;
     }
-    // if there is an active process on the output device, decrement its timer and check if it's done
-    if (o_active) {
-        o_active->output_timer--;
-        o_active->total_output_time++;
-        if (o_active->output_timer == 0) {
-            o_active->output_count++;
-            o_active->sub++;
-            ready_queue.push_back(o_active);
-            o_active = nullptr;
+    // If there is an active process on the output device, decrement its timer and check if it's done
+    if (output_active) {
+        output_active->output_timer--;
+        output_active->total_output_time++;
+        if (output_active->output_timer == 0) {
+            output_active->output_count++;
+            output_active->history_index++;
+            ready_queue.push_back(output_active);
+            output_active = nullptr;
         }
     }
 }
 
 /*********************************************************************************
 * update_waiting_time
-* adds to the wait timer for every proccess stuck in a queue.
+*   Adds to the wait timer for every proccess stuck in a queue.
+*
 * @param none
 *********************************************************************************/
 void update_waiting_time() {
-    // jus loop and add time
+    // Add to the waiting time for each process in the queues
     for (int i = 0; i < (int)ready_queue.size(); i++){
         ready_queue[i]->waiting_time++;
-    } 
+    }
     for (int i = 0; i < (int)input_queue.size(); i++) {
         input_queue[i]->waiting_time++;
     } 
@@ -367,44 +419,48 @@ void update_waiting_time() {
 
 /*********************************************************************************
 * print_state
-* prints out what is happening right now for the assignemnt output.
-* @param t - the current time unit recieved
+* Prints out the current state of the system.
+*
+* @param t - the current time unit
 *********************************************************************************/
 void print_state(int t) {
-    // print the current state of the system
+    // Print the current state of the system
     cout << "\n--- Time " << t << " ---" << endl;
     cout << "Active: " << (active ? to_string(active->process_id) : "None") << endl;
-    cout << "IActive: " << (i_active ? to_string(i_active->process_id) : "None") << endl;
-    cout << "OActive: " << (o_active ? to_string(o_active->process_id) : "None") << endl;
+    cout << "IActive: " << (input_active ? to_string(input_active->process_id) : "None") << endl;
+    cout << "OActive: " << (output_active ? to_string(output_active->process_id) : "None") << endl;
 
-    // print the queues
+    // Print the queues
     cout << "Entry Q: ";
     if (entry_queue.empty()) cout << "Empty";
     for (size_t i = 0; i < entry_queue.size(); i++) {
         cout << entry_queue[i]->process_id << " ";
     } 
     cout << endl;
-
+    
+    // Ready Queue
     cout << "Ready Q: ";
     if (ready_queue.empty()) {
-        cout << "Empty!!";
+        cout << "[Empty]";
     } 
     for (size_t i = 0; i < ready_queue.size(); i++) {
         cout << ready_queue[i]->process_id << " ";
     }
     cout << endl;
 
+    // Input Queue
     cout << "Input Q: ";
     if (input_queue.empty()) {
-        cout << "Empty!!";
+        cout << "[Empty]";
     }
     for (size_t i = 0; i < input_queue.size(); i++) {
         cout << input_queue[i]->process_id << " ";
     }
     cout << endl;
 
+    // Output Queue
     cout << "Output Q: ";
-    if (output_queue.empty()) cout << "Empty!!";
+    if (output_queue.empty()) cout << "[Empty]";
     for (size_t i = 0; i < output_queue.size(); i++) {
         cout << output_queue[i]->process_id << " ";
     }
@@ -412,21 +468,29 @@ void print_state(int t) {
 }
 /*********************************************************************************
  * terminate_process
- * prints out the stats for a process that is terminating and cleans up memory.
+ *   Prints out the stats for a process that is terminating and cleans up memory.
+ * 
  * @param p - the process that is terminating
  *********************************************************************************/
 void terminate_process(Process* p) {
-    // print the stats for the process that is terminating
+    // Print the stats for the process that is terminating
     cout << "Time " << sys_timer << ": " << p->process_name << " terminated" << endl;
     cout << "  - Process ID: " << p->process_id << endl;
-    cout << "  - CPU Bursts: " << p->cpu_count << endl;           // [cite: 102]
-    cout << "  - Input Bursts: " << p->input_count << endl;       // [cite: 103]
-    cout << "  - Output Bursts: " << p->output_count << endl;     // [cite: 104]
-    cout << "  - Time in CPU: " << p->total_cpu_time << endl;     // [cite: 105]
-    cout << "  - Time in Input: " << p->total_input_time << endl; // [cite: 106]
-    cout << "  - Time in Output: " << p->total_output_time << endl;// [cite: 107]
-    cout << "  - Time Waiting: " << p->waiting_time << endl;      // [cite: 108]
+    cout << "  - CPU Bursts: " << p->cpu_count << endl;
+    cout << "  - Input Bursts: " << p->input_count << endl;
+    cout << "  - Output Bursts: " << p->output_count << endl;
+    cout << "  - Time in CPU: " << p->total_cpu_time << endl;
+    cout << "  - Time in Input: " << p->total_input_time << endl;
+    cout << "  - Time in Output: " << p->total_output_time << endl;
+    cout << "  - Time Waiting: " << p->waiting_time << endl;
+
     cout << endl;
+
+    // Add the process's times to the total times
+    total_waiting_time += p->waiting_time;
+    total_cpu_time += p->total_cpu_time;
+    total_input_time += p->total_input_time;
+    total_output_time += p->total_output_time;
 
     delete p; // Clean up the memory allocated
 }
